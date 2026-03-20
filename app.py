@@ -336,6 +336,7 @@ with tab1:
                 st.session_state.chat_history.insert(0, {
                     "query": query, "intro": intro, "sources": []
                 })
+            st.rerun()
 
         # ── 回答履歴 ─────────────────────────────────────────────────────────
         for entry in st.session_state.chat_history:
