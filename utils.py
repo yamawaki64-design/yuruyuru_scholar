@@ -44,7 +44,7 @@ def get_embedding_fn():
 # ── ChromaDB 初期化 ───────────────────────────────────────────────────────────
 def init_chromadb():
     client = chromadb.Client()
-    collection = client.create_collection(
+    collection = client.get_or_create_collection(
         name="shisho_docs",
         embedding_function=get_embedding_fn(),
         metadata={"hnsw:space": "cosine"},
