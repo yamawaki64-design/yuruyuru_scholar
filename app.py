@@ -54,6 +54,8 @@ def _init_session():
         st.session_state.collection = None
         st.session_state.wiki_loaded = False
         st.session_state.uploaded_files = []
+        st.session_state.uploader_key = 0
+        st.session_state.already_have_msg = ""
         st.session_state.chat_history = []
         st.session_state.chat_summary = ""
         st.session_state.last_exchange = None
@@ -208,10 +210,14 @@ with tab1:
             type=["pdf", "docx", "xlsx"],
             accept_multiple_files=True,
             label_visibility="visible",
+            key=f"uploader_{st.session_state.uploader_key}",
         )
+        if st.session_state.get("already_have_msg"):
+            st.info(st.session_state.already_have_msg)
 
         if uploaded:
             processed_names = set(st.session_state.uploaded_files)
+            already_have = [f.name for f in uploaded if f.name in processed_names]
             new_files = [f for f in uploaded if f.name not in processed_names]
             newly_added = []
 
@@ -246,6 +252,14 @@ with tab1:
                 st.session_state.hoo_message = (
                     f"ふむふむ〜、{names}、預かったよ〜📚\nなにか知りたいこと、聞いてみてねぇ"
                 )
+                st.session_state.already_have_msg = ""
+                st.session_state.uploader_key += 1
+                st.rerun()
+
+            if already_have:
+                names = "、".join(already_have)
+                st.session_state.already_have_msg = f"「{names}」はもう預かってるよ〜🦉"
+                st.session_state.uploader_key += 1
                 st.rerun()
 
         # ── 質問入力 ─────────────────────────────────────────────────────────
@@ -285,6 +299,7 @@ with tab1:
         # ── 質問処理 ─────────────────────────────────────────────────────────
         if submitted and query_input.strip():
             query = query_input.strip()
+            st.session_state.already_have_msg = ""
             try:
                 # ① クエリ補完（10文字以下のみ）
                 expanded_query = query
