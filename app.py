@@ -1,5 +1,6 @@
 import re
 import shutil
+import uuid
 from pathlib import Path
 
 import groq
@@ -15,9 +16,10 @@ from utils import (
     expand_query,
     format_source_item,
     generate_response,
+    get_wiki_collection,
     get_wiki_file_info,
     group_results_by_file,
-    init_chromadb,
+    init_upload_collection,
     load_wiki_to_chromadb,
     search_documents,
     store_chunks,
@@ -50,8 +52,10 @@ _sync_wiki_static()
 # ── セッション初期化（重いモデルロードはしない） ──────────────────────────────
 def _init_session():
     if "wiki_loaded" not in st.session_state:
-        st.session_state.chroma_client = None
-        st.session_state.collection = None
+        st.session_state.session_id = uuid.uuid4().hex[:16]
+        st.session_state.wiki_collection = None
+        st.session_state.upload_client = None
+        st.session_state.upload_collection = None
         st.session_state.wiki_loaded = False
         st.session_state.uploaded_files = []
         st.session_state.uploader_key = 0
@@ -159,14 +163,16 @@ with tab1:
         # ① まずホーさんメッセージを表示
         _render_hoo_message("持ってる本を整理してるから、最初だけちょっと待ってねぇ〜🦉")
 
-        # ② ChromaDB + 埋め込みモデル初期化（重い処理、メッセージ表示後に実行）
-        if st.session_state.collection is None:
+        # ② WikiコレクションとUploadコレクションの初期化
+        if st.session_state.wiki_collection is None:
             with st.spinner("司書さんの準備中…"):
-                client, collection = init_chromadb()
-            st.session_state.chroma_client = client
-            st.session_state.collection = collection
+                wiki_col = get_wiki_collection()
+                upload_client, upload_col = init_upload_collection(st.session_state.session_id)
+            st.session_state.wiki_collection = wiki_col
+            st.session_state.upload_client = upload_client
+            st.session_state.upload_collection = upload_col
 
-        # ③ Wiki ファイル読み込み
+        # ③ Wiki ファイル読み込み（既にロード済みなら内部でスキップされる）
         wiki_files = []
         if Path("data/wiki").exists():
             wiki_files = [
@@ -183,7 +189,7 @@ with tab1:
                 progress_bar.progress(done / total)
                 status_text.caption(f"「{name}」を読み込んでるよ〜")
 
-            load_wiki_to_chromadb(st.session_state.collection, progress_callback=_on_progress)
+            load_wiki_to_chromadb(st.session_state.wiki_collection, progress_callback=_on_progress)
             progress_bar.empty()
             status_text.empty()
 
@@ -243,7 +249,7 @@ with tab1:
                     st.warning(f"「{uf.name}」はテキストが読み取れないよぉ〜。スキャンの資料は苦手なんだぁ🦉")
                     continue
 
-                store_chunks(st.session_state.collection, chunks, source_type="upload")
+                store_chunks(st.session_state.upload_collection, chunks, source_type="upload")
                 st.session_state.uploaded_files.append(uf.name)
                 newly_added.append(uf.name)
 
@@ -282,7 +288,9 @@ with tab1:
             if st.button("🦉 預かったもの全部返すよ〜", use_container_width=True):
                 if st.session_state.uploaded_files:
                     try:
-                        st.session_state.collection.delete(where={"source_type": "upload"})
+                        ids = st.session_state.upload_collection.get()["ids"]
+                        if ids:
+                            st.session_state.upload_collection.delete(ids=ids)
                     except Exception:
                         pass
 
@@ -307,7 +315,11 @@ with tab1:
                     expanded_query = expand_query(query, groq_client)
 
                 # ② 類似検索（ベクトルスコア上位5件）
-                search_results = search_documents(st.session_state.collection, expanded_query)
+                search_results = search_documents(
+                    st.session_state.wiki_collection,
+                    st.session_state.upload_collection,
+                    expanded_query,
+                )
 
                 # ③ 回答生成
                 if search_results is None:

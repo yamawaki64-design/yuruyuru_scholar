@@ -1,6 +1,7 @@
 import io
 import json
 import re
+import threading
 from collections import OrderedDict
 from pathlib import Path
 
@@ -41,11 +42,32 @@ def get_embedding_fn():
     return _embedding_fn
 
 
-# ── ChromaDB 初期化 ───────────────────────────────────────────────────────────
-def init_chromadb():
+# ── Wiki 用プロセス共有コレクション（全セッションで1つだけ） ──────────────────
+_wiki_client = None
+_wiki_collection = None
+_wiki_lock = threading.Lock()
+
+
+def get_wiki_collection():
+    """プロセス全体で1つだけ保持するWikiコレクション（スレッドセーフ初期化）"""
+    global _wiki_client, _wiki_collection
+    with _wiki_lock:
+        if _wiki_client is None:
+            _wiki_client = chromadb.Client()
+            _wiki_collection = _wiki_client.get_or_create_collection(
+                name="shisho_wiki",
+                embedding_function=get_embedding_fn(),
+                metadata={"hnsw:space": "cosine"},
+            )
+    return _wiki_collection
+
+
+# ── セッション固有のアップロードコレクション ──────────────────────────────────
+def init_upload_collection(session_id: str):
+    """セッションごとに独立したアップロード用コレクション"""
     client = chromadb.Client()
     collection = client.get_or_create_collection(
-        name="shisho_docs",
+        name=f"shisho_upload_{session_id}",
         embedding_function=get_embedding_fn(),
         metadata={"hnsw:space": "cosine"},
     )
@@ -277,8 +299,13 @@ def store_chunks(collection, chunks, source_type="wiki"):
 EXT_MAP = {".pdf": "pdf", ".docx": "docx", ".xlsx": "xlsx", ".html": "html", ".htm": "html"}
 
 
-def load_wiki_to_chromadb(collection, progress_callback=None):
-    """WIKI_DIR の全ファイルを ChromaDB に登録する"""
+def load_wiki_to_chromadb(wiki_collection, progress_callback=None):
+    """WIKI_DIR の全ファイルを wiki_collection に登録する。
+    既にデータがある場合（別セッションがロード済み）はスキップする。
+    """
+    if wiki_collection.count() > 0:
+        return  # 別セッションが既にロード済み
+
     if not WIKI_DIR.exists():
         return
 
@@ -291,7 +318,7 @@ def load_wiki_to_chromadb(collection, progress_callback=None):
     for done, filepath in enumerate(files, 1):
         file_type = EXT_MAP[filepath.suffix.lower()]
         chunks = extract_text(filepath, file_type, source_name=filepath.name)
-        store_chunks(collection, chunks, source_type="wiki")
+        store_chunks(wiki_collection, chunks, source_type="wiki")
         if progress_callback:
             progress_callback(done, total, filepath.name)
 
@@ -351,41 +378,56 @@ def summarize_conversation_sync(last_exchange, current_summary, groq_client):
 
 
 # ── 類似検索 ──────────────────────────────────────────────────────────────────
-def search_documents(collection, query):
-    """
-    ChromaDB で類似検索し、フィルタリング済みの結果を返す。
-    見つからない場合は None を返す。
-    """
+def _query_collection(collection, query):
+    """1つのコレクションを検索してヒットリストを返す（内部ヘルパー）"""
     try:
         count = collection.count()
         if count == 0:
-            return None
+            return []
         results = collection.query(
             query_texts=[query],
             n_results=min(MAX_SEARCH_RESULTS, count),
         )
+        if not results or not results["documents"] or not results["documents"][0]:
+            return []
+        return list(zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+        ))
     except Exception:
+        return []
+
+
+def search_documents(wiki_collection, upload_collection, query):
+    """
+    WikiコレクションとUploadコレクションを両方検索してマージする。
+    見つからない場合は None を返す。
+    """
+    wiki_hits = _query_collection(wiki_collection, query)
+    upload_hits = _query_collection(upload_collection, query) if upload_collection else []
+
+    all_hits = wiki_hits + upload_hits
+    if not all_hits:
         return None
 
-    if not results or not results["documents"] or not results["documents"][0]:
+    # 距離の昇順にソート
+    all_hits.sort(key=lambda x: x[2])
+
+    # 最小距離が閾値以上なら「見つからない」
+    if all_hits[0][2] >= SIMILARITY_THRESHOLD:
         return None
 
-    docs = results["documents"][0]
-    metas = results["metadatas"][0]
-    dists = results["distances"][0]
-
-    # 全結果が閾値以上なら「見つからない」
-    if not dists or min(dists) >= SIMILARITY_THRESHOLD:
-        return None
-
-    # 重複排除（同一ファイル＋同一スコア）してベクトルスコア順に返す
+    # 重複排除（同一ファイル＋同一スコア）して上位 MAX_SEARCH_RESULTS 件を返す
     seen_keys = set()
     final = []
-    for doc, meta, dist in zip(docs, metas, dists):
+    for doc, meta, dist in all_hits:
         key = (meta.get("source", ""), round(dist, 6))
         if key not in seen_keys:
             seen_keys.add(key)
             final.append({"text": doc, "metadata": meta, "distance": dist})
+        if len(final) >= MAX_SEARCH_RESULTS:
+            break
 
     # デバッグ：取得件数と距離一覧を出力
     print(f"[Search] {len(final)} hits:")

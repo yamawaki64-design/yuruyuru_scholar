@@ -301,14 +301,26 @@ RecursiveCharacterTextSplitter(
 
 ```python
 # st.session_state に保持するもの
-st.session_state.chroma_client    # ChromaDB クライアント
-st.session_state.collection       # ChromaDB コレクション
-st.session_state.wiki_loaded      # Wiki読み込み完了フラグ（起動時ローディング制御）
-st.session_state.uploaded_files   # アップロード済みファイル名リスト
-st.session_state.chat_history     # 回答履歴（表示用）
-st.session_state.chat_summary     # 会話要約（Groqに渡す用）
-st.session_state.last_exchange    # 直前のQ&A（{"q": ..., "a": ...}）
+st.session_state.session_id         # セッション固有ID（uuid）
+st.session_state.wiki_collection    # WikiコレクションへのRef（プロセス共有）
+st.session_state.upload_client      # アップロード用ChromaDBクライアント（セッション固有）
+st.session_state.upload_collection  # アップロード用コレクション（セッション固有）
+st.session_state.wiki_loaded        # Wiki読み込み完了フラグ（起動時ローディング制御）
+st.session_state.uploaded_files     # アップロード済みファイル名リスト
+st.session_state.chat_history       # 回答履歴（表示用）
+st.session_state.chat_summary       # 会話要約（Groqに渡す用）
+st.session_state.last_exchange      # 直前のQ&A（{"q": ..., "a": ...}）
 ```
+
+## ChromaDB コレクション構成
+
+| コレクション名 | スコープ | 内容 |
+|---|---|---|
+| `shisho_wiki` | プロセス共有（1つのみ） | Wiki読み込みデータ。2セッション目以降はスキップ |
+| `shisho_upload_{session_id}` | セッション固有 | そのセッションのアップロードファイルのみ |
+
+- Wikiデータはプロセスを通じて1回だけ読み込まれる（`count() > 0` でスキップ判定）
+- 検索時は両コレクションを検索してマージし、距離昇順で返す
 
 ---
 
