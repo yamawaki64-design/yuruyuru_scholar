@@ -313,6 +313,35 @@
     .page-title { font-size: 30px; }
     .app-intro { flex-direction: column; }
     .app-intro-thumb { width: 100%; height: 140px; }
+
+    /* ファイル形式テーブルをカード形式に変換 */
+    .file-table thead { display: none; }
+    .file-table, .file-table tbody, .file-table tr, .file-table td {
+      display: block;
+      width: 100%;
+    }
+    .file-table tr {
+      border: 1px solid rgba(160,120,48,0.25);
+      background: rgba(245,234,214,0.4);
+      margin-bottom: 10px;
+      padding: 10px 12px;
+    }
+    .file-table tr:last-child { margin-bottom: 0; }
+    .file-table td {
+      border: none;
+      padding: 3px 0;
+    }
+    .file-table td:first-child {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--ink);
+      padding-bottom: 4px;
+      border-bottom: 1px solid rgba(160,120,48,0.2);
+      margin-bottom: 4px;
+    }
+    .file-badge {
+      white-space: normal;
+    }
   }
 </style>
 </head>

@@ -154,6 +154,24 @@
     position: relative;
   }
 
+  @media (max-width: 600px) {
+    .app-entry {
+      grid-template-columns: 1fr;
+    }
+    .app-illustration {
+      border-right: none;
+      border-bottom: 1px solid rgba(160,120,48,0.35);
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 16px;
+    }
+    .screenshot-placeholder {
+      width: 140px;
+      height: 96px;
+    }
+  }
+
   .app-entry::before {
     content: attr(data-num);
     position: absolute;
