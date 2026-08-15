@@ -130,10 +130,11 @@ def _render_answer_entry(entry: dict):
 
     if sources:
         groups = group_results_by_file(sources)
+        entry_key = hash(query_text)
         for src, items in groups.items():
             first = format_source_item(items[0])
             expander_label = f'{first["icon"]} {first["label"]}'
-            with st.expander(expander_label, expanded=False):
+            with st.expander(expander_label, expanded=False, key=f"exp_{entry_key}_{src}"):
                 for item in items:
                     info = format_source_item(item)
                     detail_html = (
@@ -274,7 +275,7 @@ with tab1:
             cols = st.columns([9, 1])
             with cols[0]:
                 query_input = st.text_input(
-                    "",
+                    "ホーさんに聞く",
                     placeholder="なにか知りたいことがあれば…",
                     label_visibility="collapsed",
                 )

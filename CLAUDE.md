@@ -107,8 +107,8 @@ else:
 | チャンク化 | LangChain | RecursiveCharacterTextSplitter |
 | ベクトルDB | ChromaDB | インメモリ（セッション保持） |
 | 埋め込み | sentence-transformers | paraphrase-multilingual-MiniLM-L12-v2 |
-| LLM（回答生成） | Groq API | llama-3.3-70b-versatile |
-| LLM（クエリ補完） | Groq API | llama-3.1-8b-instant（TPD上限が大きいため） |
+| LLM（回答生成） | Groq API | openai/gpt-oss-120b（推論モデル） |
+| LLM（クエリ補完） | Groq API | openai/gpt-oss-20b |
 
 ---
 
@@ -348,13 +348,19 @@ MAX_UPLOAD_FILES = 5              # アップロード上限
 MAX_FILE_SIZE_MB = 10             # ファイルサイズ上限
 QUERY_EXPAND_THRESHOLD = 10       # 文字数がこれ以下なら expand_query() 実行
 HISTORY_TURNS = 1                 # Groqに渡す直前ターン数
-GROQ_MODEL = "llama-3.3-70b-versatile"       # 回答生成（品質重視）
-GROQ_MODEL_LIGHT = "llama-3.1-8b-instant"   # クエリ補完（TPD 1,000,000/day）
+GROQ_MODEL = "openai/gpt-oss-120b"       # 回答生成（品質重視）
+GROQ_MODEL_LIGHT = "openai/gpt-oss-20b"  # クエリ補完
 ```
 
 **廃止した定数**（削除済み）:
 - `MAX_CHUNKS_PER_FILE`（ファイル別チャンク上限）
 - `MAX_FILES_IN_RESULT`（出典ファイル数上限）
+
+---
+
+## Groqモデル移行時の注意事項
+
+→ 詳細は `docs/GROQ_MODEL_MIGRATION.md` を参照（ゆるゆるシリーズ共通ドキュメント）
 
 ---
 
@@ -365,7 +371,6 @@ GROQ_MODEL_LIGHT = "llama-3.1-8b-instant"   # クエリ補完（TPD 1,000,000/da
 - v2予定のURLスクレイピングは今は実装しない。extract_text()にコメントだけ残す
 - Groqへの指示はシンプルに保つ（複数の制約を同時に与えない）
 - Groqに出典表示を任せない（Pythonで確実に表示する）
-- Groq TPD上限（llama-3.3-70b-versatile: 100,000トークン/日）に注意。
-  generate_response に渡すチャンクは上位3件に絞ること
+- Groq TPD上限に注意。generate_response に渡すチャンクは上位3件に絞ること
 - ChromaDB のコレクション設計は「ChromaDB コレクション構成」セクションを必ず参照すること。
   単一コレクションに戻すとセッション間でアップロードデータが混入する

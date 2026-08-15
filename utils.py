@@ -26,8 +26,8 @@ MAX_UPLOAD_FILES = 5         # アップロード上限
 MAX_FILE_SIZE_MB = 10        # ファイルサイズ上限
 QUERY_EXPAND_THRESHOLD = 10  # 文字数がこれ以下なら expand_query() 実行
 HISTORY_TURNS = 1            # Groqに渡す直前ターン数
-GROQ_MODEL = "llama-3.3-70b-versatile"       # 回答生成（品質重視）
-GROQ_MODEL_LIGHT = "llama-3.1-8b-instant"   # リランキング・クエリ補完（TPD 1,000,000/day）
+GROQ_MODEL = "openai/gpt-oss-120b"       # 回答生成（品質重視）
+GROQ_MODEL_LIGHT = "openai/gpt-oss-20b"  # クエリ補完
 WIKI_DIR = Path("data/wiki")
 EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
@@ -466,14 +466,27 @@ def generate_response(query, search_results, chat_summary, groq_client):
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=200,
+            max_tokens=1024,
         )
-        m = re.search(r"\{.*\}", resp.choices[0].message.content, re.DOTALL)
+        choice = resp.choices[0]
+        raw = choice.message.content or ""
+        print(f"[Groq generate_response] finish_reason: {choice.finish_reason!r}")
+        print(f"[Groq generate_response] message fields: {vars(choice.message)}")
+        print(f"[Groq generate_response] raw content: {raw!r}")
+
+        # thinkingブロック除去
+        cleaned = re.sub(r"<think(?:ing)?>.*?</think(?:ing)?>", "", raw, flags=re.DOTALL)
+        # バッククォートブロック・jsonプレフィックス除去
+        cleaned = re.sub(r"```(?:json)?\s*", "", cleaned)
+        cleaned = cleaned.replace("```", "").strip()
+
+        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if m:
             data = json.loads(m.group())
             intro = data.get("intro", "えーとえーと…見つかったよ〜🦉")
             keywords = [k for k in data.get("keywords", []) if isinstance(k, str) and k]
             return intro, keywords
+        print(f"[Groq generate_response] JSON not found in cleaned: {cleaned!r}")
     except groq.RateLimitError:
         print(f"[Groq] generate_response: RateLimitError")
         raise
